@@ -873,52 +873,108 @@ function openReport(id) {
   setTimeout(() => renderReport(curCust), 3200);
 }
 
-function renderReport(c) {
-  const unresolved = c.ints.filter(i => (i.st || i.status) === 'unresolved');
-  const channels = [...new Set(c.ints.map(i => i.ch||i.channel))];
-  const lastUnres = unresolved[unresolved.length-1];
-  const sum = `تواصل ${c.name} مع الدعم ${c.ints.length} ${c.ints.length===1?'مرة':'مرات'} عبر: ${channels.map(ch=>chLabel(ch)).join(' و')}. ${unresolved.length>0?`لا تزال هناك ${unresolved.length} مشكلة غير محلولة.`:'جميع المشكلات محلولة.'}`;
-  const pred = unresolved.length>0 ? `على الأرجح يتصل للمتابعة في: "${lastUnres.summary||lastUnres.sum}". يُتوقع تصعيد إذا لم يُحل الأمر.` : 'تواصل روتيني أو استفسار جديد. لا مشكلات مفتوحة.';
-  const sugs = unresolved.length>0
-    ? ['مراجعة آخر مشكلة غير محلولة وحلها فوراً','عدم إحالة العميل أو تأجيل الحل','تأكيد الحل بإرسال رسالة نصية للعميل','تحديث حالة الطلب في النظام قبل إنهاء المكالمة']
-    : ['الاستماع الجيد لسبب التواصل','توثيق التفاعل الجديد في النظام','التأكد من رضا العميل قبل الإنهاء'];
-  document.getElementById('rp-body').innerHTML = `
-    <div class="rp-sec">
-      <div class="rp-sec-lbl"><div class="sdot" style="background:#4F8EF7"></div>ملخص رحلة العميل</div>
-      <div class="rp-txt">${sum}</div>
-    </div>
-    <div class="rp-sec">
-      <div class="rp-sec-lbl"><div class="sdot" style="background:var(--amber)"></div>المشكلات المفتوحة</div>
-      ${unresolved.length ? unresolved.map(i => `<div class="iss-item"><div class="issdot"></div><span>${i.sum||i.summary}</span></div>`).join('') : '<div style="font-size:13px;color:var(--text3)">لا توجد مشكلات مفتوحة.</div>'}
-    </div>
-    <div class="rp-sec">
-      <div class="rp-sec-lbl"><div class="sdot" style="background:var(--violet)"></div>التنبؤ بسبب التواصل الحالي</div>
-      <div class="rp-txt">${pred}</div>
-    </div>
-    <div class="rp-sec">
-      <div class="rp-sec-lbl"><div class="sdot" style="background:var(--blue)"></div>التوصيات المقترحة</div>
-      ${sugs.map((s,i) => `<div class="sug-item"><div class="sug-num">${i+1}</div><span>${s}</span></div>`).join('')}
-    </div>
-    <div class="rp-sec">
-      <div class="rp-sec-lbl"><div class="sdot" style="background:var(--text3)"></div>سجل التفاعلات</div>
-      <div class="tl">
-        ${c.ints.map((it,idx) => `
-          <div class="tl-item">
-            <div class="tl-l">
-              <div class="tl-ico" style="background:${chColor(it.ch || it.channel)}18;color:${chColor(it.ch || it.channel)}">
-                <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="4" fill="currentColor"/></svg>
-              </div>
-              <div class="tl-line"></div>
-            </div>
-            <div class="tl-c">
-              <div class="tl-meta"><span style="color:${chColor(it.ch || it.channel)};font-weight:500">${chLabel(it.ch || it.channel)}</span><span>${it.date}</span></div>
-              <div class="tl-txt">${it.sum || it.summary}</div>
-              <div class="tl-bdg"><span class="badge ${(it.st||it.status)==='unresolved'?'b-amber':'b-green'}">${(it.st||it.status)==='unresolved'?'غير محلولة':'محلولة'}</span></div>
-            </div>
-          </div>`).join('')}
+async function renderReport(c) {
+  const interactionsText = c.ints.map((i, idx) =>
+    `${idx+1}. القناة: ${chLabel(i.ch||i.channel)} | التاريخ: ${i.date} | الحالة: ${(i.st||i.status)==='unresolved'?'غير محلولة':'محلولة'} | الملخص: ${i.sum||i.summary}`
+  ).join('\n');
+
+  const prompt = `أنت مساعد ذكاء اصطناعي متخصص في خدمة العملاء. فيما يلي سجل تفاعلات العميل ${c.name}:
+
+${interactionsText}
+
+اكتب تقريراً للموظف يتضمن أربعة أقسام فقط بهذا الترتيب والتنسيق بالضبط:
+
+ملخص رحلة العميل:
+[اكتب ملخصاً موجزاً لرحلة العميل]
+
+المشكلات المفتوحة:
+[اذكر المشكلات غير المحلولة فقط، أو اكتب "لا توجد مشكلات مفتوحة"]
+
+التنبؤ بسبب التواصل الحالي:
+[اكتب توقعك لسبب تواصل العميل الآن]
+
+التوصيات المقترحة:
+1. [توصية أولى]
+2. [توصية ثانية]
+3. [توصية ثالثة]
+4. [توصية رابعة]
+
+لا تضف أي نص خارج هذه الأقسام الأربعة.`;
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 
+  'Content-Type': 'application/json',
+  'x-api-key': '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',
+  'anthropic-version': '2023-06-01',
+  'anthropic-dangerous-direct-browser-access': 'true'
+},
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 600,
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+
+    const data = await response.json();
+    const text = data.content[0].text;
+
+    // parse sections
+    const getSection = (label) => {
+      const regex = new RegExp(label + ':\\s*([\\s\\S]*?)(?=ملخص|المشكلات|التنبؤ|التوصيات|$)');
+      const match = text.match(regex);
+      return match ? match[1].trim() : '';
+    };
+
+    const sum  = getSection('ملخص رحلة العميل');
+    const open = getSection('المشكلات المفتوحة');
+    const pred = getSection('التنبؤ بسبب التواصل الحالي');
+    const sugsRaw = getSection('التوصيات المقترحة');
+    const sugs = sugsRaw.split('\n').filter(l => l.trim()).map(l => l.replace(/^\d+\.\s*/, '').trim()).filter(Boolean);
+
+    const unresolved = c.ints.filter(i => (i.st||i.status) === 'unresolved');
+
+    document.getElementById('rp-body').innerHTML = `
+      <div class="rp-sec">
+        <div class="rp-sec-lbl"><div class="sdot" style="background:#4F8EF7"></div>ملخص رحلة العميل</div>
+        <div class="rp-txt">${sum}</div>
       </div>
-    </div>
-  `;
+      <div class="rp-sec">
+        <div class="rp-sec-lbl"><div class="sdot" style="background:var(--amber)"></div>المشكلات المفتوحة</div>
+        ${unresolved.length ? unresolved.map(i => `<div class="iss-item"><div class="issdot"></div><span>${i.sum||i.summary}</span></div>`).join('') : '<div style="font-size:13px;color:var(--text3)">' + open + '</div>'}
+      </div>
+      <div class="rp-sec">
+        <div class="rp-sec-lbl"><div class="sdot" style="background:var(--violet)"></div>التنبؤ بسبب التواصل الحالي</div>
+        <div class="rp-txt">${pred}</div>
+      </div>
+      <div class="rp-sec">
+        <div class="rp-sec-lbl"><div class="sdot" style="background:var(--blue)"></div>التوصيات المقترحة</div>
+        ${sugs.map((s,i) => `<div class="sug-item"><div class="sug-num">${i+1}</div><span>${s}</span></div>`).join('')}
+      </div>
+      <div class="rp-sec">
+        <div class="rp-sec-lbl"><div class="sdot" style="background:var(--text3)"></div>سجل التفاعلات</div>
+        <div class="tl">
+          ${c.ints.map(it => `
+            <div class="tl-item">
+              <div class="tl-l">
+                <div class="tl-ico" style="background:${chColor(it.ch||it.channel)}18;color:${chColor(it.ch||it.channel)}">
+                  <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="4" fill="currentColor"/></svg>
+                </div>
+                <div class="tl-line"></div>
+              </div>
+              <div class="tl-c">
+                <div class="tl-meta"><span style="color:${chColor(it.ch||it.channel)};font-weight:500">${chLabel(it.ch||it.channel)}</span><span>${it.date}</span></div>
+                <div class="tl-txt">${it.sum||it.summary}</div>
+                <div class="tl-bdg"><span class="badge ${(it.st||it.status)==='unresolved'?'b-amber':'b-green'}">${(it.st||it.status)==='unresolved'?'غير محلولة':'محلولة'}</span></div>
+              </div>
+            </div>`).join('')}
+        </div>
+      </div>`;
+
+  } catch(e) {
+    document.getElementById('rp-body').innerHTML = '<div style="padding:20px;font-size:13px;color:var(--text3)">تعذر تحميل التقرير. تحقق من اتصالك وحاول مجدداً.</div>';
+  }
 }
 
 function closeReport() { document.getElementById('backdrop').classList.remove('show'); }
