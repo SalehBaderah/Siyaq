@@ -705,9 +705,12 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY)
   
 const cur = document.getElementById('cur');
 document.addEventListener('mousemove', e => { cur.style.left=e.clientX+'px'; cur.style.top=e.clientY+'px'; });
-document.querySelectorAll('button,.ccard').forEach(el => {
-  el.addEventListener('mouseenter', () => cur.classList.add('big'));
-  el.addEventListener('mouseleave', () => cur.classList.remove('big'));
+document.addEventListener('mouseover', e => {
+  if (e.target.closest('button, .ccard')) {
+    cur.classList.add('big');
+  } else {
+    cur.classList.remove('big');
+  }
 });
 
 const CH_COLORS = { phone:'#4F8EF7', whatsapp:'#2DD4A0', branch:'#A78BFA', twitter:'#38BDF8', email:'#F5A623' };
@@ -797,7 +800,6 @@ function renderList(list) {
     </div>
     ${aiSummaryCard(c)}`;
   }).join('');
-  rebindCursor();
 }
 
 function normalizeAr(s) {
@@ -1009,12 +1011,6 @@ function addNote() {
   }
 }
 
-function rebindCursor() {
-  document.querySelectorAll('button,.ccard').forEach(el => {
-    el.addEventListener('mouseenter', () => cur.classList.add('big'));
-    el.addEventListener('mouseleave', () => cur.classList.remove('big'));
-  });
-}
 
             //asks supabase for customers, interactions then links them together and updates the stats with the real data
 async function loadCustomers() {
