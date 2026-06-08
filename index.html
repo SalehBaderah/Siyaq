@@ -841,9 +841,8 @@ function filterList() {
 
 function updateStats() {
   const tot = DB.length;
-  const allInts = DB.flatMap(c => c.ints);
-  const unres = allInts.filter(i => i.st === 'unresolved').length;
-  const res = allInts.filter(i => i.st === 'resolved').length;
+  const unres = allInts.filter(i => (i.st || i.status) === 'unresolved').length;
+  const res = allInts.filter(i => (i.st || i.status) === 'resolved').length;
   document.getElementById('s-tot').textContent = tot;
   document.getElementById('s-unres').textContent = unres;
   document.getElementById('s-res').textContent = res;
@@ -852,7 +851,7 @@ function updateStats() {
   document.getElementById('sb-unres').textContent = unres;
 
   const counts = {phone:0, whatsapp:0, branch:0, twitter:0, email:0};
-  allInts.forEach(i => { if(counts[i.ch]!==undefined) counts[i.ch]++; });
+  allInts.forEach(i => { const ch = i.ch || i.channel; if(counts[ch]!==undefined) counts[ch]++; });
   document.getElementById('cnt-phone').textContent = counts.phone;
   document.getElementById('cnt-wa').textContent = counts.whatsapp;
   document.getElementById('cnt-br').textContent = counts.branch;
@@ -863,11 +862,11 @@ function updateStats() {
 function openReport(id) {
   curCust = DB.find(c => c.id === id);
   if (!curCust) return;
-  const unres = curCust.ints.filter(i => i.st === 'unresolved').length;
+  const unres = curCust.ints.filter(i => (i.st || i.status) === 'unresolved').length;
   document.getElementById('rp-av').textContent = curCust.init;
   document.getElementById('rp-name').textContent = curCust.name;
   document.getElementById('rp-meta').textContent = curCust.ints.length + ' تفاعلات، ' + unres + ' غير محلولة';
-  const channels = [...new Set(curCust.ints.map(i => i.ch))];
+  const channels = [...new Set(curCust.ints.map(i => i.ch || i.channel))];
   document.getElementById('rp-channels').innerHTML = channels.map(ch =>
     `<div class="rp-ch"><div class="rp-ch-dot" style="background:${chColor(ch)}"></div>${chLabel(ch)}</div>`
   ).join('');
@@ -879,7 +878,7 @@ function openReport(id) {
 
 function renderReport(c) {
   const r = REPORTS[c.id];
-  const unresolved = c.ints.filter(i => i.st === 'unresolved');
+  const unresolved = c.ints.filter(i => (i.st || i.status) === 'unresolved');
   document.getElementById('rp-body').innerHTML = `
     <div class="rp-sec">
       <div class="rp-sec-lbl"><div class="sdot" style="background:#4F8EF7"></div>ملخص رحلة العميل</div>
@@ -887,7 +886,7 @@ function renderReport(c) {
     </div>
     <div class="rp-sec">
       <div class="rp-sec-lbl"><div class="sdot" style="background:var(--amber)"></div>المشكلات المفتوحة</div>
-      ${unresolved.length ? unresolved.map(i => `<div class="iss-item"><div class="issdot"></div><span>${i.sum}</span></div>`).join('') : '<div style="font-size:13px;color:var(--text3)">لا توجد مشكلات مفتوحة.</div>'}
+      ${unresolved.length ? unresolved.map(i => `<div class="iss-item"><div class="issdot"></div><span>${i.sum || i.summary}</span></div>`).join('') : '<div style="font-size:13px;color:var(--text3)">لا توجد مشكلات مفتوحة.</div>'}
     </div>
     <div class="rp-sec">
       <div class="rp-sec-lbl"><div class="sdot" style="background:var(--violet)"></div>التنبؤ بسبب التواصل الحالي</div>
@@ -903,15 +902,15 @@ function renderReport(c) {
         ${c.ints.map((it,idx) => `
           <div class="tl-item">
             <div class="tl-l">
-              <div class="tl-ico" style="background:${chColor(it.ch)}18;color:${chColor(it.ch)}">
+              <div class="tl-ico" style="background:${chColor(it.ch || it.channel)}18;color:${chColor(it.ch || it.channel)}">
                 <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="4" fill="currentColor"/></svg>
               </div>
               <div class="tl-line"></div>
             </div>
             <div class="tl-c">
-              <div class="tl-meta"><span style="color:${chColor(it.ch)};font-weight:500">${chLabel(it.ch)}</span><span>${it.date}</span></div>
-              <div class="tl-txt">${it.sum}</div>
-              <div class="tl-bdg"><span class="badge ${it.st==='unresolved'?'b-amber':'b-green'}">${it.st==='unresolved'?'غير محلولة':'محلولة'}</span></div>
+              <div class="tl-meta"><span style="color:${chColor(it.ch || it.channel)};font-weight:500">${chLabel(it.ch || it.channel)}</span><span>${it.date}</span></div>
+              <div class="tl-txt">${it.sum || it.summary}</div>
+              <div class="tl-bdg"><span class="badge ${(it.st||it.status)==='unresolved'?'b-amber':'b-green'}">${(it.st||it.status)==='unresolved'?'غير محلولة':'محلولة'}</span></div>
             </div>
           </div>`).join('')}
       </div>
@@ -940,20 +939,34 @@ async function addInt() {
   const date = document.getElementById('f-date').value
   if (!name || !phone || !summary || !date) return
 
-  let { data: existing, error: findError } = await sb.from('customers')
-    .select('*').eq('phone', phone).maybeSingle()
-console.log('existing:', existing, 'findError:', findError)
+  const { data: existingList } = await sb.from('customers')
+    .select('*').eq('phone', phone)
 
   let customerId
-  if (!existing) {
-    const { data: newCust, error } = await sb.from('customers')
-  .insert({ name, phone, init: name.slice(0,2) })
-  .select().single()
-if (error) { console.log('insert error:', error); return; }
-customerId = newCust.id
+  if (existingList && existingList.length > 0) {
+    customerId = existingList[0].id
   } else {
-    customerId = existing.id
+    const { data: newCustList } = await sb.from('customers')
+      .insert([{ name, phone, init: name.slice(0,2) }])
+      .select()
+    customerId = newCustList[0].id
   }
+
+  await sb.from('interactions').insert([{
+    customer_id: customerId,
+    channel: selCh,
+    date,
+    summary,
+    status: selSt,
+    email: selCh === 'email' ? document.getElementById('f-email').value : null
+  }])
+
+  const tst = document.getElementById('tst')
+  tst.classList.add('show')
+  setTimeout(() => tst.classList.remove('show'), 2800)
+  clearForm()
+  loadCustomers()
+}
 
   await sb.from('interactions').insert({
     customer_id: customerId,
