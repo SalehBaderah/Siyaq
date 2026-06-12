@@ -1375,3 +1375,7 @@ textarea.fi{resize:vertical;min-height:84px;line-height:1.55}
     right: 1rem;
   }
 }
+
+body:has(#splash:not([style*="display: none"])) #call-panel {
+  display: none;
+}
